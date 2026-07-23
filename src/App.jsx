@@ -654,7 +654,7 @@ export default function App() {
     pollRef.current = setInterval(async () => {
       try { const data = await dbGet(matchId); if (data) { skipNextSave.current = true; applyPayload(data); setSyncStatus("synced"); } }
       catch { setSyncStatus("error"); }
-    }, 10000);
+    }, 15000);
     return () => clearInterval(pollRef.current);
   }, [view, matchId]);
 
