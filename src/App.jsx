@@ -54,6 +54,23 @@ async function dbSet(matchId, data) {
   });
   if (!res.ok) throw new Error("fail");
 }
+async function dbSetIndexEntry(matchId, entry) {
+  const res = await fetch(`${FIREBASE_DB_URL}/matchIndex/${matchId}.json`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) throw new Error("fail");
+}
+async function dbGetIndexList() {
+  const res = await fetch(`${FIREBASE_DB_URL}/matchIndex.json`);
+  if (!res.ok) throw new Error("fail");
+  const data = await res.json();
+  if (!data) return [];
+  return Object.entries(data)
+    .map(([code, v]) => ({ code, ...v }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
 
 function makeTeams() {
   return TEAM_DEFS.map((t) => ({
@@ -83,7 +100,7 @@ function makeEvent() {
     courseName: "",
     stake: 1,
     locked: false,
-    codes: { admin: "ADMIN1", scorer: "SCORE1", view: "VIEW1" },
+    codes: { admin: "ADMIN1", scorer1: "SCORE1", scorer2: "SCORE2", scorer3: "SCORE3", scorer4: "SCORE4", view: "VIEW1" },
   };
 }
 
@@ -195,12 +212,26 @@ function progressPct(scoreHoles) {
   return Math.round((filled / (16 * scoreHoles.length)) * 100);
 }
 
-function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error }) {
+function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error, tournaments, loadingTournaments, onSelectTournament }) {
   return (
     <div className="setup">
       <div className="setup__flag"><Flag size={30} strokeWidth={2} /></div>
       <h1 className="setup__title">Trojan Match Play</h1>
       <p className="setup__sub">Live, shared tournament scoring.</p>
+
+      {tournaments.length > 0 && (
+        <div className="card" style={{ width: "100%", textAlign: "left" }}>
+          <div className="sectionLabel">Existing tournaments</div>
+          {tournaments.map((t) => (
+            <button key={t.code} className="tourneyRow" onClick={() => onSelectTournament(t.code)}>
+              <span className="tourneyRow__name">{t.eventName || "Untitled event"}</span>
+              <span className="tourneyRow__code">{t.code}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {loadingTournaments && <p className="setup__sub" style={{ margin: "0 0 14px" }}>Loading tournaments\u2026</p>}
+
       <label className="setup__field">
         <span>Have a match code?</span>
         <input value={joinCode} maxLength={4} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="e.g. K7QM" />
@@ -215,14 +246,15 @@ function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error }) {
 
 function RoleGate({ event, onEnter }) {
   const [code, setCode] = useState("");
-  const [foursome, setFoursome] = useState(0);
   const [error, setError] = useState("");
 
   const submit = () => {
     const c = code.trim().toUpperCase();
     if (c === event.codes.admin.toUpperCase()) return onEnter("admin", null);
-    if (c === event.codes.scorer.toUpperCase()) return onEnter("scorer", foursome);
     if (c === event.codes.view.toUpperCase()) return onEnter("view", null);
+    for (let i = 0; i < 4; i++) {
+      if (c === event.codes[`scorer${i + 1}`].toUpperCase()) return onEnter("scorer", i);
+    }
     setError("Code not recognized.");
   };
 
@@ -233,13 +265,7 @@ function RoleGate({ event, onEnter }) {
       <p className="setup__sub">{event.eventName}</p>
       <label className="setup__field">
         <span>Access code</span>
-        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ADMIN1 / SCORE1 / VIEW1" />
-      </label>
-      <label className="setup__field">
-        <span>If scoring, which foursome are you with?</span>
-        <select className="selectInput" value={foursome} onChange={(e) => setFoursome(Number(e.target.value))}>
-          {[0, 1, 2, 3].map((i) => <option key={i} value={i}>Foursome {i + 1}</option>)}
-        </select>
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. SCORE2 for Foursome 2" />
       </label>
       {error && <div className="setup__error">{error}</div>}
       <button className="setup__start" onClick={submit}>Enter <Flag size={16} strokeWidth={2.5} /></button>
@@ -275,7 +301,10 @@ function SetupTab({ event, setEvent, teams, setTeams, courseHoles, setCourseHole
           <label className="setup__field"><span>Payout: $ per point difference</span><input type="number" inputMode="numeric" value={event.stake} onChange={(e) => updateEvent("stake", Number(e.target.value) || 0)} /></label>
           <div className="codesGrid">
             <label className="setup__field"><span>Admin code</span><input value={event.codes.admin} onChange={(e) => updateCode("admin", e.target.value)} /></label>
-            <label className="setup__field"><span>Scorer code</span><input value={event.codes.scorer} onChange={(e) => updateCode("scorer", e.target.value)} /></label>
+            <label className="setup__field"><span>Foursome 1 scorer code</span><input value={event.codes.scorer1} onChange={(e) => updateCode("scorer1", e.target.value)} /></label>
+            <label className="setup__field"><span>Foursome 2 scorer code</span><input value={event.codes.scorer2} onChange={(e) => updateCode("scorer2", e.target.value)} /></label>
+            <label className="setup__field"><span>Foursome 3 scorer code</span><input value={event.codes.scorer3} onChange={(e) => updateCode("scorer3", e.target.value)} /></label>
+            <label className="setup__field"><span>Foursome 4 scorer code</span><input value={event.codes.scorer4} onChange={(e) => updateCode("scorer4", e.target.value)} /></label>
             <label className="setup__field"><span>View-only code</span><input value={event.codes.view} onChange={(e) => updateCode("view", e.target.value)} /></label>
           </div>
         </div>
@@ -586,8 +615,23 @@ export default function App() {
   const [courseHoles, setCourseHoles] = useState(makeCourseHoles);
   const [scoreHoles, setScoreHoles] = useState(makeScoreHoles);
 
+  const [tournaments, setTournaments] = useState([]);
+  const [loadingTournaments, setLoadingTournaments] = useState(false);
+
   const skipNextSave = useRef(false);
   const pollRef = useRef(null);
+  const lastEditRef = useRef(0);
+  const markEdited = () => { lastEditRef.current = Date.now(); };
+  const setEventTracked = (u) => { markEdited(); setEvent(u); };
+  const setTeamsTracked = (u) => { markEdited(); setTeams(u); };
+  const setCourseHolesTracked = (u) => { markEdited(); setCourseHoles(u); };
+  const setScoreHolesTracked = (u) => { markEdited(); setScoreHoles(u); };
+
+  useEffect(() => {
+    if (view !== "landing" || !configured()) return;
+    setLoadingTournaments(true);
+    dbGetIndexList().then(setTournaments).catch(() => {}).finally(() => setLoadingTournaments(false));
+  }, [view]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -634,8 +678,11 @@ export default function App() {
     setView("live");
     setTab("setup");
     setSyncStatus("saving");
-    try { await dbSet(code, { mode: "usc-stableford", event: ev, teams: t, courseHoles: ch, scoreHoles: sh }); setSyncStatus("synced"); }
-    catch { setSyncStatus("error"); }
+    try {
+      await dbSet(code, { mode: "usc-stableford", event: ev, teams: t, courseHoles: ch, scoreHoles: sh });
+      await dbSetIndexEntry(code, { eventName: ev.eventName, courseName: ev.courseName, createdAt: Date.now() });
+      setSyncStatus("synced");
+    } catch { setSyncStatus("error"); }
   }
 
   useEffect(() => {
@@ -644,7 +691,7 @@ export default function App() {
     setSyncStatus("saving");
     const t = setTimeout(async () => {
       try { await dbSet(matchId, payload()); setSyncStatus("synced"); } catch { setSyncStatus("error"); }
-    }, 500);
+    }, 1000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, teams, courseHoles, scoreHoles]);
@@ -652,9 +699,12 @@ export default function App() {
   useEffect(() => {
     if (view !== "live" || !matchId) return;
     pollRef.current = setInterval(async () => {
+      // Skip pulling remote updates while the person is actively typing/tapping,
+      // so their in-progress entry never gets overwritten mid-edit.
+      if (Date.now() - lastEditRef.current < 10000) return;
       try { const data = await dbGet(matchId); if (data) { skipNextSave.current = true; applyPayload(data); setSyncStatus("synced"); } }
       catch { setSyncStatus("error"); }
-    }, 15000);
+    }, 12000);
     return () => clearInterval(pollRef.current);
   }, [view, matchId]);
 
@@ -676,7 +726,12 @@ export default function App() {
         <GlobalStyle />
         <div className="app">
           {!configured() && <div className="configNotice">Shared database not configured yet.</div>}
-          <LandingScreen joinCode={joinCode} setJoinCode={setJoinCode} onJoin={() => joinMatch(joinCode)} onCreate={createMatch} error={joinError} />
+          <LandingScreen
+            joinCode={joinCode} setJoinCode={setJoinCode}
+            onJoin={() => joinMatch(joinCode)} onCreate={createMatch} error={joinError}
+            tournaments={tournaments} loadingTournaments={loadingTournaments}
+            onSelectTournament={(code) => joinMatch(code)}
+          />
         </div>
       </>
     );
@@ -731,14 +786,14 @@ export default function App() {
         </div>
 
         {tab === "setup" && role === "admin" && (
-          <SetupTab event={event} setEvent={setEvent} teams={teams} setTeams={setTeams} courseHoles={courseHoles} setCourseHoles={setCourseHoles} activeHole={activeHole} setActiveHole={setActiveHole} />
+          <SetupTab event={event} setEvent={setEventTracked} teams={teams} setTeams={setTeamsTracked} courseHoles={courseHoles} setCourseHoles={setCourseHolesTracked} activeHole={activeHole} setActiveHole={setActiveHole} />
         )}
         {tab === "score" && (role === "admin" || role === "scorer") && (
-          <ScoreTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} setScoreHoles={setScoreHoles} activeHole={activeHole} setActiveHole={setActiveHole} role={role} myFoursome={myFoursome} locked={event.locked} />
+          <ScoreTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} setScoreHoles={setScoreHolesTracked} activeHole={activeHole} setActiveHole={setActiveHole} role={role} myFoursome={myFoursome} locked={event.locked} />
         )}
         {tab === "leaderboard" && <LeaderboardTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} />}
         {tab === "payouts" && <PayoutsTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} stake={event.stake} />}
-        {tab === "admin" && role === "admin" && <AdminPanel event={event} setEvent={setEvent} teams={teams} scoreHoles={scoreHoles} resetScores={resetScores} />}
+        {tab === "admin" && role === "admin" && <AdminPanel event={event} setEvent={setEventTracked} teams={teams} scoreHoles={scoreHoles} resetScores={resetScores} />}
 
         <footer className="footer">share code {matchId} &middot; {event.courseName}</footer>
       </div>
@@ -857,6 +912,10 @@ function GlobalStyle() {
       .mvpCard__pts { margin-left: auto; font-family: 'Oswald', sans-serif; font-weight: 600; }
 
       .sectionLabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #A2ABA0; font-weight: 700; margin-bottom: 10px; }
+      .tourneyRow { width: 100%; display: flex; align-items: center; justify-content: space-between; background: none; border: none; border-bottom: 1px solid var(--line); padding: 10px 2px; cursor: pointer; text-align: left; }
+      .tourneyRow:last-child { border-bottom: none; }
+      .tourneyRow__name { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+      .tourneyRow__code { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 12px; color: var(--fairway); letter-spacing: 1px; }
       .holeGridScroll { overflow-x: auto; }
       .holeGrid { border-collapse: collapse; font-size: 11px; }
       .holeGrid th, .holeGrid td { padding: 5px 7px; text-align: center; border-bottom: 1px solid var(--line); }
