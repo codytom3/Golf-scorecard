@@ -330,30 +330,27 @@ function SetupTab({ event, setEvent, teams, setTeams, courseHoles, setCourseHole
 
       {section === "course" && (
         <div className="card">
-          <div className="strip">
-            {courseHoles.map((h) => (
-              <button key={h.number} className={`strip__hole ${h.number === activeHole ? "strip__hole--active" : ""}`} onClick={() => setActiveHole(h.number)}>
-                <span className="strip__num">{h.number}</span>
-                <span className="strip__par">Par {h.par}</span>
-              </button>
+          <div className="sectionLabel">Par &amp; stroke index &middot; all holes</div>
+          <div className="courseTable">
+            <div className="courseTable__row courseTable__row--head">
+              <span>Hole</span><span>Par</span><span>Stroke Index</span>
+            </div>
+            {courseHoles.map((h, i) => (
+              <div className="courseTable__row" key={h.number}>
+                <span className="courseTable__num">{h.number}</span>
+                <input
+                  type="number"
+                  value={h.par}
+                  onChange={(e) => setCourseHoles((hs) => hs.map((x, xi) => xi === i ? { ...x, par: Number(e.target.value) || 3 } : x))}
+                />
+                <input
+                  type="number"
+                  value={h.strokeIndex}
+                  onChange={(e) => setCourseHoles((hs) => hs.map((x, xi) => xi === i ? { ...x, strokeIndex: Number(e.target.value) || 1 } : x))}
+                />
+              </div>
             ))}
           </div>
-          <div className="card__holeNum" style={{ textAlign: "center", marginBottom: 10 }}>HOLE {ch.number}</div>
-          <div className="courseFieldsRow">
-            <label className="setup__field" style={{ flex: 1 }}><span>Par</span><input type="number" value={ch.par} onChange={(e) => updateHole("par", Number(e.target.value) || 3)} /></label>
-            <label className="setup__field" style={{ flex: 1 }}><span>Stroke index</span><input type="number" value={ch.strokeIndex} onChange={(e) => updateHole("strokeIndex", Number(e.target.value) || 1)} /></label>
-          </div>
-          <div className="setup__field"><span>Yardage by tee</span>
-            <div className="yardageGrid">
-              {TEE_NAMES.map((t) => (
-                <div key={t} className="yardageCell">
-                  <span>{t}</span>
-                  <input type="number" value={ch.yardage[t]} onChange={(e) => updateYardage(t, e.target.value)} />
-                </div>
-              ))}
-            </div>
-          </div>
-          <label className="setup__field"><span>Notes</span><input value={ch.notes} onChange={(e) => updateHole("notes", e.target.value)} placeholder="e.g. water left, reachable par 5" /></label>
         </div>
       )}
     </>
@@ -636,9 +633,41 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("match");
-    if (code && code.length === 4) { setJoinCode(code.toUpperCase()); joinMatch(code.toUpperCase()); }
+    if (code && code.length === 4) { setJoinCode(code.toUpperCase()); joinMatch(code.toUpperCase()); return; }
+
+    // No link code in the URL — check for a remembered session from before a refresh.
+    try {
+      const saved = JSON.parse(localStorage.getItem("trojanMatchSession") || "null");
+      if (saved && saved.matchId) {
+        setJoinCode(saved.matchId);
+        rejoinWithSession(saved.matchId, saved.role, saved.myFoursome);
+      }
+    } catch { /* ignore malformed saved session */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function rejoinWithSession(code, savedRole, savedFoursome) {
+    if (!configured()) return;
+    try {
+      const data = await dbGet(code);
+      if (!data) { localStorage.removeItem("trojanMatchSession"); return; }
+      skipNextSave.current = true;
+      applyPayload(data);
+      setMatchId(code);
+      setRole(savedRole);
+      if (savedFoursome != null) setMyFoursome(savedFoursome);
+      setTab(savedRole === "view" ? "leaderboard" : "score");
+      setView("live");
+      setSyncStatus("synced");
+    } catch { /* stay on landing if offline */ }
+  }
+
+  function saveSession(code, r, fs) {
+    try { localStorage.setItem("trojanMatchSession", JSON.stringify({ matchId: code, role: r, myFoursome: fs })); } catch {}
+  }
+  function clearSession() {
+    try { localStorage.removeItem("trojanMatchSession"); } catch {}
+  }
 
   function payload() {
     return { mode: "usc-stableford", event, teams, courseHoles, scoreHoles };
@@ -681,6 +710,7 @@ export default function App() {
     try {
       await dbSet(code, { mode: "usc-stableford", event: ev, teams: t, courseHoles: ch, scoreHoles: sh });
       await dbSetIndexEntry(code, { eventName: ev.eventName, courseName: ev.courseName, createdAt: Date.now() });
+      saveSession(code, "admin", null);
       setSyncStatus("synced");
     } catch { setSyncStatus("error"); }
   }
@@ -710,6 +740,7 @@ export default function App() {
 
   const leaveMatch = () => {
     clearInterval(pollRef.current);
+    clearSession();
     setMatchId(null); setRole(null);
     setEvent(makeEvent()); setTeams(makeTeams()); setCourseHoles(makeCourseHoles()); setScoreHoles(makeScoreHoles());
     setJoinCode(""); setActiveHole(1); setView("landing");
@@ -742,7 +773,7 @@ export default function App() {
       <>
         <GlobalStyle />
         <div className="app">
-          <RoleGate event={event} onEnter={(r, fs) => { setRole(r); if (fs != null) setMyFoursome(fs); setTab(r === "view" ? "leaderboard" : "score"); setView("live"); }} />
+          <RoleGate event={event} onEnter={(r, fs) => { setRole(r); if (fs != null) setMyFoursome(fs); setTab(r === "view" ? "leaderboard" : "score"); setView("live"); saveSession(matchId, r, fs); }} />
         </div>
       </>
     );
@@ -807,17 +838,26 @@ function GlobalStyle() {
       :root {
         --fairway: #990000; --turf: #7A0000; --sand: #FFC72C;
         --chalk: #FAFAFA; --ink: #1A1A1A; --flag: #1A1A1A; --line: #E8DCC0;
+        --augusta: #0B3D26; --augustaDeep: #072B1B; --cream: #F4EFDD;
       }
       * { box-sizing: border-box; }
-      .app { font-family: 'Inter', sans-serif; background: var(--chalk); color: var(--ink); min-height: 100vh; max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
+      .app {
+        font-family: 'Inter', sans-serif;
+        background:
+          radial-gradient(ellipse at 50% -10%, rgba(255,199,44,0.10), transparent 55%),
+          linear-gradient(180deg, var(--augusta) 0%, var(--augustaDeep) 100%);
+        background-attachment: fixed;
+        color: var(--cream);
+        min-height: 100vh; max-width: 560px; margin: 0 auto; padding: 20px 16px 40px;
+      }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
       .configNotice { background: #FDECEC; border: 1px solid #E8B4B4; color: #8A2E2E; font-size: 12.5px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
 
       .setup { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 20px; }
-      .setup__flag { width: 56px; height: 56px; border-radius: 50%; background: var(--fairway); color: var(--chalk); display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
-      .setup__title { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.5px; margin: 0 0 6px; color: var(--fairway); }
-      .setup__sub { color: #6B5B5B; font-size: 14px; margin: 0 0 22px; }
+      .setup__flag { width: 56px; height: 56px; border-radius: 50%; background: var(--fairway); color: var(--cream); display: flex; align-items: center; justify-content: center; margin-bottom: 18px; border: 2px solid var(--sand); box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+      .setup__title { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.5px; margin: 0 0 6px; color: var(--sand); }
+      .setup__sub { color: rgba(244,239,221,0.72); font-size: 14px; margin: 0 0 22px; }
       .setup__field { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
       .setup__field span { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: #6B5B5B; }
       .setup__field input, .selectInput { border: 1.5px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 15px; font-family: 'Inter', sans-serif; background: white; color: var(--ink); width: 100%; }
@@ -832,7 +872,7 @@ function GlobalStyle() {
       .setup__divider span { padding: 0 10px; }
       .codesGrid { display: flex; flex-direction: column; gap: 0; }
 
-      .teamCard { width: 100%; background: white; border: 1.5px solid var(--line); border-left-width: 5px; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; text-align: left; }
+      .teamCard { width: 100%; background: white; border: 1.5px solid var(--line); border-left-width: 5px; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; text-align: left; color: var(--ink); }
       .teamCard__header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
       .teamCard__dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
       .teamCard__name { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
@@ -842,14 +882,14 @@ function GlobalStyle() {
       .teamCard__tee { width: 78px; border: 1px solid var(--line); border-radius: 7px; padding: 8px 4px; font-size: 12px; }
 
       .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-      .header__title { display: flex; align-items: center; gap: 8px; font-family: 'Oswald', sans-serif; font-weight: 700; letter-spacing: 1.2px; font-size: 12.5px; color: var(--fairway); }
-      .header__reset { background: none; border: 1.5px solid var(--line); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: #6B5B5B; cursor: pointer; }
+      .header__title { display: flex; align-items: center; gap: 8px; font-family: 'Oswald', sans-serif; font-weight: 700; letter-spacing: 1.2px; font-size: 12.5px; color: var(--sand); }
+      .header__reset { background: rgba(244,239,221,0.08); border: 1.5px solid rgba(244,239,221,0.25); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--cream); cursor: pointer; }
 
       .shareBar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12px; flex-wrap: wrap; }
       .shareBar__code { display: flex; align-items: center; gap: 5px; font-weight: 600; letter-spacing: 1px; background: #FBEAEA; padding: 5px 9px; border-radius: 7px; color: var(--fairway); }
       .shareBar__copy { display: flex; align-items: center; gap: 5px; background: white; border: 1.5px solid var(--line); border-radius: 7px; padding: 5px 9px; cursor: pointer; color: #6B5B5B; }
       .shareBar__role { text-transform: uppercase; font-weight: 700; font-size: 10.5px; color: var(--sand); background: var(--ink); padding: 5px 8px; border-radius: 7px; display: flex; align-items: center; gap: 4px; }
-      .shareBar__status { margin-left: auto; color: #A2ABA0; }
+      .shareBar__status { margin-left: auto; color: rgba(244,239,221,0.55); }
       .shareBar__status--error { color: var(--fairway); }
       .shareBar__status--synced { color: var(--turf); }
 
@@ -866,7 +906,7 @@ function GlobalStyle() {
       .strip__hole--active { border-color: var(--fairway); border-width: 2px; }
       .strip__hole--tie { background: #FFF6DD; border-color: var(--sand); }
 
-      .card { background: white; border: 1.5px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+      .card { background: var(--cream); border: 1.5px solid rgba(255,199,44,0.35); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); color: var(--ink); }
       .card__holeRow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
       .card__nav { width: 34px; height: 34px; border-radius: 8px; border: 1.5px solid var(--line); background: white; font-size: 20px; color: var(--fairway); cursor: pointer; }
       .card__nav:disabled { opacity: 0.3; }
@@ -875,6 +915,13 @@ function GlobalStyle() {
       .card__parLabel { border: none; background: none; color: #8A9490; font-size: 11.5px; }
 
       .courseFieldsRow { display: flex; gap: 10px; }
+      .courseTable { display: flex; flex-direction: column; }
+      .courseTable__row { display: grid; grid-template-columns: 50px 1fr 1fr; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+      .courseTable__row:last-child { border-bottom: none; }
+      .courseTable__row--head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: #A2ABA0; font-weight: 700; padding-bottom: 8px; }
+      .courseTable__num { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px; text-align: center; }
+      .courseTable__row input { border: 1.5px solid var(--line); border-radius: 7px; padding: 7px 4px; text-align: center; font-size: 14px; width: 100%; }
+      .courseTable__row input:focus { outline: 2px solid var(--fairway); border-color: var(--fairway); }
       .yardageGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
       .yardageCell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
       .yardageCell span { font-size: 9px; color: #8A9490; }
@@ -906,7 +953,7 @@ function GlobalStyle() {
       .boardRow__name { flex: 1; font-weight: 600; font-size: 14px; }
       .boardRow__total { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
 
-      .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+      .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
       .mvpCard__label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #A2ABA0; font-weight: 700; }
       .mvpCard__name { font-size: 14px; font-weight: 600; }
       .mvpCard__pts { margin-left: auto; font-family: 'Oswald', sans-serif; font-weight: 600; }
@@ -926,7 +973,7 @@ function GlobalStyle() {
       .payRow:last-child { border-bottom: none; }
       .payRow__outcome { font-size: 12.5px; color: #4A5A4D; }
 
-      .footer { text-align: center; font-size: 11px; color: #A2ABA0; letter-spacing: 0.4px; margin-top: 8px; }
+      .footer { text-align: center; font-size: 11px; color: rgba(244,239,221,0.5); letter-spacing: 0.4px; margin-top: 8px; }
     `}</style>
   );
 }
