@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Flag, Plus, Minus, RotateCcw, Trophy, Pencil, Check, Copy, Users,
   DollarSign, ListOrdered, ClipboardList, Lock, Unlock, Settings,
-  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye,
+  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table,
 } from "lucide-react";
 
 const FIREBASE_DB_URL = "https://golf-live-tracking-default-rtdb.firebaseio.com";
@@ -593,6 +593,80 @@ function PayoutsTab({ teams, courseHoles, scoreHoles, stake }) {
   );
 }
 
+function ScorecardTab({ teams, courseHoles, scoreHoles }) {
+  const [metric, setMetric] = useState("gross"); // gross | net
+
+  const allRows = teams.flatMap((t) =>
+    t.players.map((p, i) => {
+      const id = `${t.id}-${i}`;
+      const holeVals = courseHoles.map((ch, hi) => playerPoints(teams, courseHoles, scoreHoles, id, hi));
+      const played = holeVals.filter(Boolean);
+      const totGross = played.reduce((s, r) => s + r.gross, 0);
+      const totNet = played.reduce((s, r) => s + r.net, 0);
+      const totPts = played.reduce((s, r) => s + r.points, 0);
+      const sortTotal = metric === "gross" ? totGross : totNet;
+      return { id, name: p.name || "Player", team: t, hcp: p.hcp, holeVals, played: played.length, totGross, totNet, totPts, sortTotal };
+    })
+  );
+
+  // Best score first: fewest strokes (gross or net, whichever is selected) wins.
+  // Anyone with no scores entered yet sorts to the bottom.
+  const rows = [...allRows].sort((a, b) => {
+    if (a.played === 0 && b.played === 0) return 0;
+    if (a.played === 0) return 1;
+    if (b.played === 0) return -1;
+    return a.sortTotal - b.sortTotal;
+  });
+
+  return (
+    <div className="card">
+      <div className="sectionLabel">Full field scorecard</div>
+      <div className="metricToggle">
+        <button className={`metricToggle__btn ${metric === "gross" ? "metricToggle__btn--active" : ""}`} onClick={() => setMetric("gross")}>Gross</button>
+        <button className={`metricToggle__btn ${metric === "net" ? "metricToggle__btn--active" : ""}`} onClick={() => setMetric("net")}>Net</button>
+      </div>
+      <div className="holeGridScroll">
+        <table className="holeGrid holeGrid--wide">
+          <thead>
+            <tr>
+              <th className="holeGrid__sticky">Player</th>
+              <th>Hcp</th>
+              {courseHoles.map((h) => <th key={h.number}>{h.number}</th>)}
+              <th>Tot</th>
+              <th>Pts</th>
+            </tr>
+            <tr className="holeGrid__parRow">
+              <th className="holeGrid__sticky">Par</th>
+              <th></th>
+              {courseHoles.map((h) => <th key={h.number}>{h.par}</th>)}
+              <th>{courseHoles.reduce((s, h) => s + h.par, 0)}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rank) => (
+              <tr key={row.id}>
+                <td className="holeGrid__sticky holeGrid__player">
+                  {row.played > 0 && <span className="holeGrid__rank">{rank + 1}</span>}
+                  <span className="boardRow__dot" style={{ background: row.team.color }} />
+                  {row.name}
+                </td>
+                <td>{row.hcp}</td>
+                {row.holeVals.map((r, hi) => <td key={hi}>{r ? (metric === "gross" ? r.gross : r.net) : "\u2013"}</td>)}
+                <td style={{ fontWeight: 700 }}>{row.played ? (metric === "gross" ? row.totGross : row.totNet) : "\u2013"}</td>
+                <td style={{ fontWeight: 700, color: "var(--turf)" }}>{row.played ? row.totPts : "\u2013"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="payHint" style={{ marginTop: 10 }}>
+        Sorted best to worst by {metric === "gross" ? "gross" : "net"} total &middot; Gross = actual strokes &middot; Net = handicap-adjusted
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   useGoogleFonts();
 
@@ -779,9 +853,9 @@ export default function App() {
     );
   }
 
-  const tabsForRole = role === "admin" ? ["setup", "score", "leaderboard", "payouts", "admin"]
-    : role === "scorer" ? ["score", "leaderboard", "payouts"]
-    : ["leaderboard", "payouts"];
+  const tabsForRole = role === "admin" ? ["setup", "score", "leaderboard", "scorecard", "payouts", "admin"]
+    : role === "scorer" ? ["score", "leaderboard", "scorecard", "payouts"]
+    : ["leaderboard", "scorecard", "payouts"];
 
   return (
     <>
@@ -789,7 +863,6 @@ export default function App() {
       <div className="app">
         <header className="header">
           <div className="header__title"><Flag size={18} strokeWidth={2.5} /><span>{event.eventName?.toUpperCase() || "TROJAN MATCH PLAY"}</span></div>
-          <button className="header__reset" onClick={leaveMatch} aria-label="Leave match"><RotateCcw size={15} strokeWidth={2.25} /></button>
         </header>
 
         <div className="shareBar">
@@ -809,6 +882,7 @@ export default function App() {
               {t === "setup" && <Settings size={13} strokeWidth={2.25} />}
               {t === "score" && <ClipboardList size={13} strokeWidth={2.25} />}
               {t === "leaderboard" && <ListOrdered size={13} strokeWidth={2.25} />}
+              {t === "scorecard" && <Table size={13} strokeWidth={2.25} />}
               {t === "payouts" && <DollarSign size={13} strokeWidth={2.25} />}
               {t === "admin" && <Star size={13} strokeWidth={2.25} />}
               {" "}{t.charAt(0).toUpperCase() + t.slice(1)}
@@ -823,6 +897,7 @@ export default function App() {
           <ScoreTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} setScoreHoles={setScoreHolesTracked} activeHole={activeHole} setActiveHole={setActiveHole} role={role} myFoursome={myFoursome} locked={event.locked} />
         )}
         {tab === "leaderboard" && <LeaderboardTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} />}
+        {tab === "scorecard" && <ScorecardTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} />}
         {tab === "payouts" && <PayoutsTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} stake={event.stake} />}
         {tab === "admin" && role === "admin" && <AdminPanel event={event} setEvent={setEventTracked} teams={teams} scoreHoles={scoreHoles} resetScores={resetScores} />}
 
@@ -963,7 +1038,19 @@ function GlobalStyle() {
       .tourneyRow:last-child { border-bottom: none; }
       .tourneyRow__name { font-weight: 600; font-size: 13.5px; color: var(--ink); }
       .tourneyRow__code { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 12px; color: var(--fairway); letter-spacing: 1px; }
+      .scorecardHead { display: flex; align-items: center; gap: 8px; border-left: 4px solid; padding: 8px 10px; background: rgba(0,0,0,0.03); border-radius: 8px; margin-bottom: 14px; }
+      .scorecardHead__dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+      .scorecardHead__name { font-weight: 700; font-size: 14px; flex: 1; }
+      .scorecardHead__meta { font-size: 11px; color: #8A9490; }
+      .metricToggle { display: flex; gap: 6px; margin-bottom: 14px; }
+      .metricToggle__btn { flex: 1; background: white; border: 1.5px solid var(--line); border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 600; color: #6B5B5B; cursor: pointer; }
+      .metricToggle__btn--active { background: var(--fairway); border-color: var(--fairway); color: white; }
+      .holeGrid__rank { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 10px; color: #A2ABA0; width: 12px; display: inline-block; }
       .holeGridScroll { overflow-x: auto; }
+      .holeGrid--wide { font-size: 10.5px; }
+      .holeGrid__sticky { position: sticky; left: 0; background: var(--cream); text-align: left; padding-right: 8px; z-index: 1; }
+      .holeGrid__player { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+      .holeGrid__parRow th { color: #C7B98A; font-weight: 500; font-size: 10px; }
       .holeGrid { border-collapse: collapse; font-size: 11px; }
       .holeGrid th, .holeGrid td { padding: 5px 7px; text-align: center; border-bottom: 1px solid var(--line); }
       .holeGrid th { color: #A2ABA0; font-weight: 600; }
