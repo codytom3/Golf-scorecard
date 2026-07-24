@@ -211,6 +211,33 @@ function strugglingPlayer(teams, courseHoles, scoreHoles) {
   );
   return worst;
 }
+
+const JAB_LINES = [
+  "is cooked.",
+  "left their swing at home today.",
+  "is out here golfing like it's a company scramble.",
+  "found every bunker on the course. Impressive, actually.",
+  "might want to try disc golf instead.",
+  "is currently sponsored by \"Where Did That Go\" ball retrievers.",
+  "is giving the trees a run for their money.",
+  "is playing captain's-choice-of-their-own-worst-shot.",
+  "has officially entered the witness protection program.",
+  "is 0 for their handicap today.",
+  "needs a mulligan for the whole round, not just one hole.",
+  "is putting like the green is made of lava.",
+  "is on a heater... in the wrong direction.",
+  "should probably just pick up and ride along.",
+  "is making the sandbaggers proud.",
+];
+function jabHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+function jabFor(struggling) {
+  const seed = `${struggling.id}-${struggling.total}`;
+  return JAB_LINES[jabHash(seed) % JAB_LINES.length];
+}
 function holeWinner(teams, courseHoles, scoreHoles, holeIdx) {
   if (holeIdx < 0) return null;
   const filled = Object.keys(scoreHoles[holeIdx]?.scores || {}).length;
@@ -569,11 +596,12 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
       )}
 
       {struggling && mvp && struggling.id !== mvp.id && (
-        <div className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color }}>
-          <TrendingDown size={16} strokeWidth={2.25} color={struggling.team.color} />
-          <div>
-            <div className="mvpCard__label">Could use a mulligan</div>
+        <div className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color, alignItems: "flex-start" }}>
+          <TrendingDown size={16} strokeWidth={2.25} color={struggling.team.color} style={{ marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <div className="mvpCard__label">Bringing up the rear</div>
             <div className="mvpCard__name">{struggling.name} <span style={{ color: struggling.team.color }}>&middot; {struggling.team.name}</span></div>
+            <div className="mvpCard__jab">{struggling.name} {jabFor(struggling)}</div>
           </div>
           <span className="mvpCard__pts">{struggling.total} pts</span>
         </div>
@@ -1205,6 +1233,7 @@ function GlobalStyle() {
 
       .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
       .mvpCard--struggling { opacity: 0.92; }
+      .mvpCard__jab { font-size: 12px; font-style: italic; color: #8A6B6B; margin-top: 3px; }
       .heatFlames { display: flex; gap: 1px; }
       .rulesBlock { margin-bottom: 18px; }
       .rulesBlock:last-child { margin-bottom: 0; }
