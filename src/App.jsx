@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Flag, Plus, Minus, RotateCcw, Trophy, Pencil, Check, Copy, Users,
   DollarSign, ListOrdered, ClipboardList, Lock, Unlock, Settings,
-  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table, Flame,
+  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table, Flame, Info,
 } from "lucide-react";
 
 const FIREBASE_DB_URL = "https://golf-live-tracking-default-rtdb.firebaseio.com";
@@ -297,7 +297,7 @@ function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error, tournam
   );
 }
 
-function RoleGate({ event, onEnter }) {
+function RoleGate({ event, onEnter, onCancel }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
 
@@ -322,6 +322,7 @@ function RoleGate({ event, onEnter }) {
       </label>
       {error && <div className="setup__error">{error}</div>}
       <button className="setup__start" onClick={submit}>Enter <Flag size={16} strokeWidth={2.5} /></button>
+      {onCancel && <button className="setup__start setup__start--ghost" style={{ marginTop: 10 }} onClick={onCancel}>Cancel</button>}
     </div>
   );
 }
@@ -767,6 +768,62 @@ function ScorecardTab({ teams, courseHoles, scoreHoles }) {
   );
 }
 
+function RulesTab({ event }) {
+  return (
+    <div className="card">
+      <div className="sectionLabel">How this tournament works</div>
+
+      <div className="rulesBlock">
+        <div className="rulesBlock__title">The format</div>
+        <p className="rulesBlock__text">
+          16 players &middot; 4 teams of 4 &middot; 4 foursomes, with one player from each team in every foursome.
+          Everyone plays their own ball. Full (100%) handicap is used for every player.
+        </p>
+      </div>
+
+      <div className="rulesBlock">
+        <div className="rulesBlock__title">Scoring &mdash; Stableford points</div>
+        <p className="rulesBlock__text">Points are based on your <b>net</b> score (gross score minus the strokes your handicap gives you on that hole), not your raw gross score.</p>
+        <table className="rulesTable">
+          <tbody>
+            <tr><td>Double bogey or worse</td><td>0 pts</td></tr>
+            <tr><td>Bogey</td><td>1 pt</td></tr>
+            <tr><td>Par</td><td>2 pts</td></tr>
+            <tr><td>Birdie</td><td>4 pts</td></tr>
+            <tr><td>Eagle</td><td>8 pts</td></tr>
+            <tr><td>Double eagle or better</td><td>10 pts</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rulesBlock">
+        <div className="rulesBlock__title">Team scoring</div>
+        <p className="rulesBlock__text">
+          On every hole, each team's <b>best 2</b> individual point totals (out of that team's 4 players) count toward
+          the team score for that hole &mdash; marked with a ★ on the Score tab. Add those up across all 18 holes; most total points wins.
+        </p>
+      </div>
+
+      <div className="rulesBlock">
+        <div className="rulesBlock__title">Payouts</div>
+        <p className="rulesBlock__text">
+          Every team is compared against every other team. The team with more points is owed the point difference
+          multiplied by the stake (currently <b>${event.stake} per point</b>), from the team with fewer points.
+          The Money Leaderboard on the Payouts tab totals this up across all matchups for a single net number per team.
+        </p>
+      </div>
+
+      <div className="rulesBlock">
+        <div className="rulesBlock__title">Access codes</div>
+        <p className="rulesBlock__text">
+          Admins can edit the event, players, course, and every score. Each foursome has its own scorer code so
+          they can only enter scores for their own group. The view-only code shows the leaderboard without editing.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   useGoogleFonts();
 
@@ -807,16 +864,20 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("match");
-    if (code && code.length === 4) { setJoinCode(code.toUpperCase()); joinMatch(code.toUpperCase()); return; }
 
-    // No link code in the URL — check for a remembered session from before a refresh.
+    // A remembered admin/scorer login takes priority over a plain share link,
+    // so refreshing (even via a shared ?match= URL) never demotes someone
+    // back down to view-only or re-prompts them for a code.
     try {
       const saved = JSON.parse(localStorage.getItem("trojanMatchSession") || "null");
-      if (saved && saved.matchId) {
+      if (saved && saved.matchId && (!code || code.toUpperCase() === saved.matchId)) {
         setJoinCode(saved.matchId);
         rejoinWithSession(saved.matchId, saved.role, saved.myFoursome);
+        return;
       }
     } catch { /* ignore malformed saved session */ }
+
+    if (code && code.length === 4) { setJoinCode(code.toUpperCase()); joinMatch(code.toUpperCase()); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -862,7 +923,9 @@ export default function App() {
       skipNextSave.current = true;
       applyPayload(data);
       setMatchId(code);
-      setView("rolegate");
+      setRole("view");
+      setTab("leaderboard");
+      setView("live");
       setSyncStatus("synced");
     } catch { setJoinError("Couldn't reach the shared database."); }
   }
@@ -947,15 +1010,19 @@ export default function App() {
       <>
         <GlobalStyle />
         <div className="app">
-          <RoleGate event={event} onEnter={(r, fs) => { setRole(r); if (fs != null) setMyFoursome(fs); setTab(r === "view" ? "leaderboard" : "score"); setView("live"); saveSession(matchId, r, fs); }} />
+          <RoleGate
+            event={event}
+            onEnter={(r, fs) => { setRole(r); if (fs != null) setMyFoursome(fs); setTab(r === "view" ? "leaderboard" : "score"); setView("live"); saveSession(matchId, r, fs); }}
+            onCancel={matchId ? () => setView("live") : null}
+          />
         </div>
       </>
     );
   }
 
-  const tabsForRole = role === "admin" ? ["setup", "score", "leaderboard", "scorecard", "payouts", "admin"]
-    : role === "scorer" ? ["score", "leaderboard", "scorecard", "payouts"]
-    : ["leaderboard", "scorecard", "payouts"];
+  const tabsForRole = role === "admin" ? ["setup", "score", "leaderboard", "scorecard", "payouts", "rules", "admin"]
+    : role === "scorer" ? ["score", "leaderboard", "scorecard", "payouts", "rules"]
+    : ["leaderboard", "scorecard", "payouts", "rules"];
 
   return (
     <>
@@ -963,6 +1030,11 @@ export default function App() {
       <div className="app">
         <header className="header">
           <div className="header__title"><Flag size={18} strokeWidth={2.5} /><span>{event.eventName?.toUpperCase() || "TROJAN MATCH PLAY"}</span></div>
+          {role === "view" && (
+            <button className="header__unlock" onClick={() => setView("rolegate")}>
+              <Lock size={12} strokeWidth={2.5} /> Unlock
+            </button>
+          )}
         </header>
 
         <div className="shareBar">
@@ -985,6 +1057,7 @@ export default function App() {
               {t === "scorecard" && <Table size={13} strokeWidth={2.25} />}
               {t === "payouts" && <DollarSign size={13} strokeWidth={2.25} />}
               {t === "admin" && <Star size={13} strokeWidth={2.25} />}
+              {t === "rules" && <Info size={13} strokeWidth={2.25} />}
               {" "}{t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -1000,6 +1073,7 @@ export default function App() {
         {tab === "scorecard" && <ScorecardTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} />}
         {tab === "payouts" && <PayoutsTab teams={teams} courseHoles={courseHoles} scoreHoles={scoreHoles} stake={event.stake} />}
         {tab === "admin" && role === "admin" && <AdminPanel event={event} setEvent={setEventTracked} teams={teams} scoreHoles={scoreHoles} resetScores={resetScores} />}
+        {tab === "rules" && <RulesTab event={event} />}
 
         <footer className="footer">share code {matchId} &middot; {event.courseName}</footer>
       </div>
@@ -1059,6 +1133,7 @@ function GlobalStyle() {
       .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
       .header__title { display: flex; align-items: center; gap: 8px; font-family: 'Oswald', sans-serif; font-weight: 700; letter-spacing: 1.2px; font-size: 12.5px; color: var(--sand); }
       .header__reset { background: rgba(244,239,221,0.08); border: 1.5px solid rgba(244,239,221,0.25); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--cream); cursor: pointer; }
+      .header__unlock { display: flex; align-items: center; gap: 4px; background: rgba(244,239,221,0.08); border: 1.5px solid rgba(244,239,221,0.25); border-radius: 8px; padding: 6px 10px; color: var(--cream); font-size: 11px; font-weight: 600; cursor: pointer; }
 
       .shareBar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12px; flex-wrap: wrap; }
       .shareBar__code { display: flex; align-items: center; gap: 5px; font-weight: 600; letter-spacing: 1px; background: #FBEAEA; padding: 5px 9px; border-radius: 7px; color: var(--fairway); }
@@ -1124,13 +1199,21 @@ function GlobalStyle() {
       .boardRow { display: flex; align-items: center; gap: 8px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
       .boardRow:last-child { border-bottom: none; }
       .boardRow__rank { width: 18px; font-family: 'Oswald', sans-serif; font-weight: 600; color: #A2ABA0; }
-      .boardRow__dot { width: 10px; height: 10px; border-radius: 50%; }
+      .boardRow__dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
       .boardRow__name { flex: 1; font-weight: 600; font-size: 14px; }
       .boardRow__total { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
 
       .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
       .mvpCard--struggling { opacity: 0.92; }
       .heatFlames { display: flex; gap: 1px; }
+      .rulesBlock { margin-bottom: 18px; }
+      .rulesBlock:last-child { margin-bottom: 0; }
+      .rulesBlock__title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px; color: var(--fairway); margin-bottom: 6px; }
+      .rulesBlock__text { font-size: 13px; line-height: 1.55; color: #4A5A4D; margin: 0; }
+      .rulesTable { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+      .rulesTable td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+      .rulesTable td:last-child { text-align: right; font-weight: 700; color: var(--turf); }
+      .rulesTable tr:last-child td { border-bottom: none; }
       .mvpCard__label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #A2ABA0; font-weight: 700; }
       .mvpCard__name { font-size: 14px; font-weight: 600; }
       .mvpCard__pts { margin-left: auto; font-family: 'Oswald', sans-serif; font-weight: 600; }
