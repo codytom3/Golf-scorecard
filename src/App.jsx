@@ -854,6 +854,39 @@ function RulesTab({ event }) {
   );
 }
 
+const LEAF_CONFIGS = [
+  { left: 4, delay: 0, duration: 13, size: 16, emoji: "\ud83c\udf42" },
+  { left: 14, delay: 3.2, duration: 16, size: 13, emoji: "\ud83c\udf43" },
+  { left: 24, delay: 1.1, duration: 12, size: 15, emoji: "\ud83c\udf42" },
+  { left: 36, delay: 6.5, duration: 18, size: 12, emoji: "\ud83c\udf43" },
+  { left: 48, delay: 2.4, duration: 14, size: 17, emoji: "\ud83c\udf42" },
+  { left: 58, delay: 8.1, duration: 15, size: 13, emoji: "\ud83c\udf43" },
+  { left: 68, delay: 0.6, duration: 17, size: 14, emoji: "\ud83c\udf42" },
+  { left: 78, delay: 4.8, duration: 13, size: 12, emoji: "\ud83c\udf43" },
+  { left: 88, delay: 5.9, duration: 16, size: 16, emoji: "\ud83c\udf42" },
+  { left: 94, delay: 2.9, duration: 19, size: 13, emoji: "\ud83c\udf43" },
+];
+function LeafField() {
+  return (
+    <div className="leafField" aria-hidden="true">
+      {LEAF_CONFIGS.map((l, i) => (
+        <span
+          key={i}
+          className="leaf"
+          style={{
+            left: `${l.left}%`,
+            fontSize: `${l.size}px`,
+            animationDelay: `${l.delay}s`,
+            animationDuration: `${l.duration}s`,
+          }}
+        >
+          {l.emoji}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   useGoogleFonts();
 
@@ -1023,6 +1056,7 @@ export default function App() {
       <>
         <GlobalStyle />
         <div className="app">
+          <LeafField />
           {!configured() && <div className="configNotice">Shared database not configured yet.</div>}
           <LandingScreen
             joinCode={joinCode} setJoinCode={setJoinCode}
@@ -1040,6 +1074,7 @@ export default function App() {
       <>
         <GlobalStyle />
         <div className="app">
+          <LeafField />
           <RoleGate
             event={event}
             onEnter={(r, fs) => { setRole(r); if (fs != null) setMyFoursome(fs); setTab(r === "view" ? "leaderboard" : "score"); setView("live"); saveSession(matchId, r, fs); }}
@@ -1058,6 +1093,7 @@ export default function App() {
     <>
       <GlobalStyle />
       <div className="app">
+        <LeafField />
         <header className="header">
           <div className="header__title"><Flag size={18} strokeWidth={2.5} /><span>{event.eventName?.toUpperCase() || "TROJAN MATCH PLAY"}</span></div>
           {role === "view" && (
@@ -1120,9 +1156,32 @@ function GlobalStyle() {
         --augusta: #0B3D26; --augustaDeep: #072B1B; --cream: #F4EFDD;
       }
       * { box-sizing: border-box; }
+      .leafField { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+      .leaf {
+        position: absolute;
+        top: -8vh;
+        opacity: 0;
+        animation-name: leafFall;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+        filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+      }
+      @keyframes leafFall {
+        0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+        6% { opacity: 0.85; }
+        50% { transform: translateY(55vh) translateX(18px) rotate(180deg); }
+        90% { opacity: 0.75; }
+        100% { transform: translateY(112vh) translateX(-14px) rotate(360deg); opacity: 0; }
+      }
+      .app { position: relative; z-index: 1; }
       .app {
         font-family: 'Inter', sans-serif;
         background:
+          radial-gradient(ellipse 220px 110px at 10% 14%, rgba(250,247,232,0.22), transparent 70%),
+          radial-gradient(ellipse 170px 85px at 90% 42%, rgba(250,247,232,0.16), transparent 70%),
+          radial-gradient(ellipse 240px 120px at 22% 88%, rgba(250,247,232,0.18), transparent 70%),
+          radial-gradient(ellipse 160px 80px at 78% 96%, rgba(250,247,232,0.14), transparent 70%),
+          repeating-linear-gradient(115deg, rgba(255,255,255,0.045) 0px, rgba(255,255,255,0.045) 34px, transparent 34px, transparent 68px),
           radial-gradient(ellipse at 50% -10%, rgba(255,199,44,0.10), transparent 55%),
           linear-gradient(180deg, var(--augusta) 0%, var(--augustaDeep) 100%);
         background-attachment: fixed;
