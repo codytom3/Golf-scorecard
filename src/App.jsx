@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Flag, Plus, Minus, RotateCcw, Trophy, Pencil, Check, Copy, Users,
   DollarSign, ListOrdered, ClipboardList, Lock, Unlock, Settings,
-  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table, Flame, Info,
+  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table, Flame, Info, Crown, Medal,
 } from "lucide-react";
 
 const FIREBASE_DB_URL = "https://golf-live-tracking-default-rtdb.firebaseio.com";
@@ -292,6 +292,13 @@ function heatList(teams, courseHoles, scoreHoles, threshold = 4, minStreak = 2) 
   return list.sort((a, b) => b.streak - a.streak);
 }
 
+function RankBadge({ rank }) {
+  if (rank === 1) return <Crown size={15} strokeWidth={2.25} color="#FFC72C" fill="#FFC72C" />;
+  if (rank === 2) return <Medal size={14} strokeWidth={2.25} color="#B8C0C8" />;
+  if (rank === 3) return <Medal size={14} strokeWidth={2.25} color="#CD7F32" />;
+  return null;
+}
+
 function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error, tournaments, loadingTournaments, onSelectTournament }) {
   return (
     <div className="setup">
@@ -577,7 +584,7 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
               {mv > 0 && <TrendingUp size={14} color="var(--turf)" />}
               {mv < 0 && <TrendingDown size={14} color="var(--flag)" />}
               {mv === 0 && <MinusIcon size={13} color="#A2ABA0" />}
-              {i === 0 && row.total > 0 && <Trophy size={14} strokeWidth={2.25} color="var(--sand)" />}
+              {row.total > 0 && <RankBadge rank={i + 1} />}
               <span className="boardRow__total">{row.total} pts</span>
             </div>
           );
@@ -654,27 +661,37 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
 
       <div className="card">
         <div className="sectionLabel">Individual leaderboard</div>
-        {teams.map((t) => (
-          <div key={t.id} style={{ marginBottom: 10 }}>
-            <div className="foursome__label" style={{ color: t.color }}>{t.name.toUpperCase()}</div>
-            {t.players.map((p, i) => {
+        {(() => {
+          const rows = teams.flatMap((t) =>
+            t.players.map((p, i) => {
               const id = `${t.id}-${i}`;
               let total = 0, thru = 0;
               scoreHoles.forEach((_, hi) => {
                 const r = playerPoints(teams, courseHoles, scoreHoles, id, hi);
                 if (r) { total += r.points; thru++; }
               });
-              return (
-                <div className="playerRow" key={id}>
-                  <span className="playerRow__name">{p.name || `Player ${i + 1}`}</span>
-                  <span className="playerRow__hcp">hcp {p.hcp}</span>
-                  <span className="playerRow__hcp">{p.tee}</span>
-                  <span className="playerRow__pts">{thru > 0 ? `${total} pts thru ${thru}` : "\u2013"}</span>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+              return { id, name: p.name || "Player", team: t, hcp: p.hcp, total, thru };
+            })
+          );
+          const ranked = [...rows].sort((a, b) => {
+            if (a.thru === 0 && b.thru === 0) return 0;
+            if (a.thru === 0) return 1;
+            if (b.thru === 0) return -1;
+            return b.total - a.total;
+          });
+          return ranked.map((row, i) => (
+            <div className="boardRow" key={row.id}>
+              <span className="boardRow__rank">{row.thru > 0 ? i + 1 : "\u2013"}</span>
+              <span className="boardRow__dot" style={{ background: row.team.color }} />
+              <span className="boardRow__name">
+                {row.name}
+                <span style={{ color: "#A2ABA0", fontWeight: 400 }}> &middot; {row.team.name} &middot; hcp {row.hcp}</span>
+              </span>
+              {row.thru > 0 && <RankBadge rank={i + 1} />}
+              <span className="boardRow__total">{row.thru > 0 ? `${row.total} pts thru ${row.thru}` : "\u2013"}</span>
+            </div>
+          ));
+        })()}
       </div>
     </>
   );
@@ -694,6 +711,7 @@ function PayoutsTab({ teams, courseHoles, scoreHoles, stake }) {
             <span className="boardRow__rank">{i + 1}</span>
             <span className="boardRow__dot" style={{ background: row.team.color }} />
             <span className="boardRow__name">{row.team.name}</span>
+            {row.net > 0 && <RankBadge rank={i + 1} />}
             <span className="boardRow__total" style={{ color: row.net > 0 ? "var(--turf)" : row.net < 0 ? "var(--fairway)" : "inherit" }}>
               {row.net > 0 ? "+" : ""}${row.net}
             </span>
