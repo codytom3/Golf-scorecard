@@ -596,8 +596,8 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
       )}
 
       {struggling && mvp && struggling.id !== mvp.id && (
-        <div className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color, alignItems: "flex-start" }}>
-          <TrendingDown size={16} strokeWidth={2.25} color={struggling.team.color} style={{ marginTop: 2 }} />
+        <div key={`${struggling.id}-${struggling.total}`} className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color, alignItems: "flex-start" }}>
+          <span className="mvpCard__skull">\u2620\ufe0f</span>
           <div style={{ flex: 1 }}>
             <div className="mvpCard__label">Bringing up the rear</div>
             <div className="mvpCard__name">{struggling.name} <span style={{ color: struggling.team.color }}>&middot; {struggling.team.name}</span></div>
@@ -1232,8 +1232,21 @@ function GlobalStyle() {
       .boardRow__total { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
 
       .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
-      .mvpCard--struggling { opacity: 0.92; }
+      .mvpCard--struggling { opacity: 0.92; animation: struggleShake 0.55s ease-in-out; }
       .mvpCard__jab { font-size: 12px; font-style: italic; color: #8A6B6B; margin-top: 3px; }
+      .mvpCard__skull { font-size: 18px; line-height: 1; margin-top: 1px; animation: struggleSkullPulse 1.6s ease-in-out infinite; }
+      @keyframes struggleShake {
+        0%, 100% { transform: translateX(0) rotate(0deg); }
+        15% { transform: translateX(-4px) rotate(-2deg); }
+        30% { transform: translateX(4px) rotate(2deg); }
+        45% { transform: translateX(-3px) rotate(-1.5deg); }
+        60% { transform: translateX(3px) rotate(1.5deg); }
+        75% { transform: translateX(-1.5px) rotate(-0.5deg); }
+      }
+      @keyframes struggleSkullPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.18); }
+      }
       .heatFlames { display: flex; gap: 1px; }
       .rulesBlock { margin-bottom: 18px; }
       .rulesBlock:last-child { margin-bottom: 0; }
