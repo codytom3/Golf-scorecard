@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Flag, Plus, Minus, RotateCcw, Trophy, Pencil, Check, Copy, Users,
   DollarSign, ListOrdered, ClipboardList, Lock, Unlock, Settings,
-  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table,
+  TrendingUp, TrendingDown, Minus as MinusIcon, Star, Award, Eye, Table, Flame,
 } from "lucide-react";
 
 const FIREBASE_DB_URL = "https://golf-live-tracking-default-rtdb.firebaseio.com";
@@ -195,6 +195,22 @@ function mvpPlayer(teams, courseHoles, scoreHoles) {
   );
   return best;
 }
+function strugglingPlayer(teams, courseHoles, scoreHoles) {
+  let worst = null;
+  teams.forEach((t) =>
+    t.players.forEach((p, i) => {
+      const id = `${t.id}-${i}`;
+      let total = 0;
+      let any = false;
+      scoreHoles.forEach((_, hi) => {
+        const r = playerPoints(teams, courseHoles, scoreHoles, id, hi);
+        if (r) { total += r.points; any = true; }
+      });
+      if (any && (!worst || total < worst.total)) worst = { id, name: p.name || "Player", team: t, total };
+    })
+  );
+  return worst;
+}
 function holeWinner(teams, courseHoles, scoreHoles, holeIdx) {
   if (holeIdx < 0) return null;
   const filled = Object.keys(scoreHoles[holeIdx]?.scores || {}).length;
@@ -210,6 +226,43 @@ function progressPct(scoreHoles) {
   let filled = 0;
   scoreHoles.forEach((h) => (filled += Object.keys(h.scores || {}).length));
   return Math.round((filled / (16 * scoreHoles.length)) * 100);
+}
+
+function moneyStandings(teams, courseHoles, scoreHoles, stake) {
+  const lastIdx = lastScoredHoleIdx(scoreHoles);
+  const totals = teams.map((t) => ({ team: t, total: teamTotalThru(teams, courseHoles, scoreHoles, t, lastIdx) }));
+  return totals
+    .map(({ team, total }) => {
+      let net = 0;
+      totals.forEach((o) => { if (o.team.id !== team.id) net += (total - o.total) * stake; });
+      return { team, net };
+    })
+    .sort((a, b) => b.net - a.net);
+}
+
+// A player is "on a heater" when their most recent consecutive holes are all
+// net birdie or better (Stableford points >= 4). Streak resets on any hole
+// worse than that; trailing un-played holes don't count against it.
+function heatList(teams, courseHoles, scoreHoles, threshold = 4, minStreak = 2) {
+  const list = [];
+  teams.forEach((t) =>
+    t.players.forEach((p, i) => {
+      const id = `${t.id}-${i}`;
+      let streak = 0, lastPlayedStreak = 0, any = false;
+      scoreHoles.forEach((_, hi) => {
+        const r = playerPoints(teams, courseHoles, scoreHoles, id, hi);
+        if (r) {
+          any = true;
+          streak = r.points >= threshold ? streak + 1 : 0;
+          lastPlayedStreak = streak;
+        }
+      });
+      if (any && lastPlayedStreak >= minStreak) {
+        list.push({ id, name: p.name || "Player", team: t, streak: lastPlayedStreak });
+      }
+    })
+  );
+  return list.sort((a, b) => b.streak - a.streak);
 }
 
 function LandingScreen({ joinCode, setJoinCode, onJoin, onCreate, error, tournaments, loadingTournaments, onSelectTournament }) {
@@ -474,6 +527,8 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
   const totals = teams.map((t) => ({ team: t, total: teamTotalThru(teams, courseHoles, scoreHoles, t, lastIdx) })).sort((a, b) => b.total - a.total);
   const movement = movementFor(teams, courseHoles, scoreHoles);
   const mvp = mvpPlayer(teams, courseHoles, scoreHoles);
+  const struggling = strugglingPlayer(teams, courseHoles, scoreHoles);
+  const heaters = heatList(teams, courseHoles, scoreHoles);
   const pct = progressPct(scoreHoles);
 
   return (
@@ -509,6 +564,35 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
             <div className="mvpCard__name">{mvp.name} <span style={{ color: mvp.team.color }}>&middot; {mvp.team.name}</span></div>
           </div>
           <span className="mvpCard__pts">{mvp.total} pts</span>
+        </div>
+      )}
+
+      {struggling && mvp && struggling.id !== mvp.id && (
+        <div className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color }}>
+          <TrendingDown size={16} strokeWidth={2.25} color={struggling.team.color} />
+          <div>
+            <div className="mvpCard__label">Could use a mulligan</div>
+            <div className="mvpCard__name">{struggling.name} <span style={{ color: struggling.team.color }}>&middot; {struggling.team.name}</span></div>
+          </div>
+          <span className="mvpCard__pts">{struggling.total} pts</span>
+        </div>
+      )}
+
+      {heaters.length > 0 && (
+        <div className="card">
+          <div className="sectionLabel">Heat tracker &middot; on a run</div>
+          {heaters.map((h) => (
+            <div className="boardRow" key={h.id}>
+              <span className="boardRow__dot" style={{ background: h.team.color }} />
+              <span className="boardRow__name">{h.name} <span style={{ color: "#A2ABA0", fontWeight: 400 }}>&middot; {h.team.name}</span></span>
+              <span className="heatFlames">
+                {Array.from({ length: Math.min(h.streak, 5) }).map((_, i) => (
+                  <Flame key={i} size={14} strokeWidth={2.25} color="#FF7A1A" fill="#FF7A1A" />
+                ))}
+              </span>
+              <span className="boardRow__total">{h.streak} in a row</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -567,12 +651,27 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
 
 function PayoutsTab({ teams, courseHoles, scoreHoles, stake }) {
   const lastIdx = lastScoredHoleIdx(scoreHoles);
+  const standings = moneyStandings(teams, courseHoles, scoreHoles, stake);
   const pairs = [];
   for (let i = 0; i < teams.length; i++) for (let j = i + 1; j < teams.length; j++) pairs.push([teams[i], teams[j]]);
   return (
-    <div className="card">
-      <div className="payHint">${stake} per point difference &middot; running totals</div>
-      {pairs.map(([ta, tb], i) => {
+    <>
+      <div className="card">
+        <div className="sectionLabel">Money leaderboard &middot; net across all matchups</div>
+        {standings.map((row, i) => (
+          <div className="boardRow" key={row.team.id}>
+            <span className="boardRow__rank">{i + 1}</span>
+            <span className="boardRow__dot" style={{ background: row.team.color }} />
+            <span className="boardRow__name">{row.team.name}</span>
+            <span className="boardRow__total" style={{ color: row.net > 0 ? "var(--turf)" : row.net < 0 ? "var(--fairway)" : "inherit" }}>
+              {row.net > 0 ? "+" : ""}${row.net}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        <div className="payHint">${stake} per point difference &middot; running totals</div>
+        {pairs.map(([ta, tb], i) => {
         const totA = teamTotalThru(teams, courseHoles, scoreHoles, ta, lastIdx);
         const totB = teamTotalThru(teams, courseHoles, scoreHoles, tb, lastIdx);
         const diff = totA - totB;
@@ -588,8 +687,9 @@ function PayoutsTab({ teams, courseHoles, scoreHoles, stake }) {
             <span className="payRow__outcome"><span style={{ color: loser.color }}>{loser.name}</span> pays <span style={{ color: winner.color }}>{winner.name}</span> ${amount}</span>
           </div>
         );
-      })}
-    </div>
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1029,6 +1129,8 @@ function GlobalStyle() {
       .boardRow__total { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
 
       .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
+      .mvpCard--struggling { opacity: 0.92; }
+      .heatFlames { display: flex; gap: 1px; }
       .mvpCard__label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #A2ABA0; font-weight: 700; }
       .mvpCard__name { font-size: 14px; font-weight: 600; }
       .mvpCard__pts { margin-left: auto; font-family: 'Oswald', sans-serif; font-weight: 600; }
