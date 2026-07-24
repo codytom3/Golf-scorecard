@@ -238,6 +238,51 @@ function jabFor(struggling) {
   const seed = `${struggling.id}-${struggling.total}`;
   return JAB_LINES[jabHash(seed) % JAB_LINES.length];
 }
+
+const MVP_LINES = [
+  "is on fire right now.",
+  "is playing lights out.",
+  "is striping every fairway today.",
+  "found their A-game and never lost it.",
+  "is putting on an absolute clinic.",
+  "is dialed in like a Tour pro.",
+  "is seeing the hole like a manhole cover.",
+  "is playing like they own this course.",
+  "is fully in the zone.",
+  "is going low today.",
+  "is channeling their inner Tiger.",
+  "is making this look easy.",
+  "is the real deal today.",
+  "is unconscious right now, in the best way.",
+  "can't miss today.",
+];
+function mvpLineFor(mvp) {
+  const seed = `${mvp.id}-${mvp.total}`;
+  return MVP_LINES[jabHash(seed) % MVP_LINES.length];
+}
+
+// Best single-hole performance across the entire field so far.
+function shotOfTheDay(teams, courseHoles, scoreHoles) {
+  let best = null;
+  teams.forEach((t) =>
+    t.players.forEach((p, i) => {
+      const id = `${t.id}-${i}`;
+      scoreHoles.forEach((_, hi) => {
+        const r = playerPoints(teams, courseHoles, scoreHoles, id, hi);
+        if (r && (!best || r.points > best.points)) {
+          best = { id, name: p.name || "Player", team: t, points: r.points, hole: courseHoles[hi].number };
+        }
+      });
+    })
+  );
+  return best && best.points >= 4 ? best : null;
+}
+function shotLineFor(shot) {
+  if (shot.points >= 10) return "made a double eagle or better. Buy them a drink.";
+  if (shot.points >= 8) return "made an eagle. Absolute hero shot.";
+  return "stuffed a birdie when it mattered most.";
+}
+
 function holeWinner(teams, courseHoles, scoreHoles, holeIdx) {
   if (holeIdx < 0) return null;
   const filled = Object.keys(scoreHoles[holeIdx]?.scores || {}).length;
@@ -563,7 +608,7 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
   const movement = movementFor(teams, courseHoles, scoreHoles);
   const mvp = mvpPlayer(teams, courseHoles, scoreHoles);
   const struggling = strugglingPlayer(teams, courseHoles, scoreHoles);
-  const heaters = heatList(teams, courseHoles, scoreHoles);
+  const shot = shotOfTheDay(teams, courseHoles, scoreHoles);
   const pct = progressPct(scoreHoles);
 
   return (
@@ -592,13 +637,14 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
       </div>
 
       {mvp && (
-        <div key={`${mvp.id}-${mvp.total}`} className="mvpCard mvpCard--gold" style={{ borderColor: mvp.team.color }}>
+        <div key={`${mvp.id}-${mvp.total}`} className="mvpCard mvpCard--gold" style={{ alignItems: "flex-start" }}>
           <span className="mvpCard__sparkle mvpCard__sparkle--1">{"\u2728"}</span>
           <span className="mvpCard__sparkle mvpCard__sparkle--2">{"\u2728"}</span>
           <span className="mvpCard__trophy"><Award size={18} strokeWidth={2.25} color="var(--sand)" /></span>
-          <div>
+          <div style={{ flex: 1 }}>
             <div className="mvpCard__label">MVP so far</div>
             <div className="mvpCard__name">{mvp.name} <span style={{ color: mvp.team.color }}>&middot; {mvp.team.name}</span></div>
+            <div className="mvpCard__jab" style={{ color: "#8A7A4A" }}>{mvp.name} {mvpLineFor(mvp)}</div>
           </div>
           <span className="mvpCard__pts">{mvp.total} pts</span>
         </div>
@@ -608,7 +654,7 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
         <div key={`${struggling.id}-${struggling.total}`} className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color, alignItems: "flex-start" }}>
           <span className="mvpCard__skull">{"\u2620\ufe0f"}</span>
           <div style={{ flex: 1 }}>
-            <div className="mvpCard__label">Bringing up the rear</div>
+            <div className="mvpCard__label">Playing like buns</div>
             <div className="mvpCard__name">{struggling.name} <span style={{ color: struggling.team.color }}>&middot; {struggling.team.name}</span></div>
             <div className="mvpCard__jab">{struggling.name} {jabFor(struggling)}</div>
           </div>
@@ -616,21 +662,15 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
         </div>
       )}
 
-      {heaters.length > 0 && (
-        <div className="card">
-          <div className="sectionLabel">Heat tracker &middot; on a run</div>
-          {heaters.map((h) => (
-            <div className="boardRow" key={h.id}>
-              <span className="boardRow__dot" style={{ background: h.team.color }} />
-              <span className="boardRow__name">{h.name} <span style={{ color: "#A2ABA0", fontWeight: 400 }}>&middot; {h.team.name}</span></span>
-              <span className="heatFlames">
-                {Array.from({ length: Math.min(h.streak, 5) }).map((_, i) => (
-                  <Flame key={i} size={14} strokeWidth={2.25} color="#FF7A1A" fill="#FF7A1A" />
-                ))}
-              </span>
-              <span className="boardRow__total">{h.streak} in a row</span>
-            </div>
-          ))}
+      {shot && (
+        <div key={`${shot.id}-${shot.hole}-${shot.points}`} className="mvpCard mvpCard--shot" style={{ borderColor: shot.team.color, alignItems: "flex-start" }}>
+          <span className="mvpCard__shotIcon">{"\u26f3"}</span>
+          <div style={{ flex: 1 }}>
+            <div className="mvpCard__label">Shot of the day</div>
+            <div className="mvpCard__name">{shot.name} <span style={{ color: shot.team.color }}>&middot; {shot.team.name}</span></div>
+            <div className="mvpCard__jab" style={{ color: "#4A6B5B" }}>On hole {shot.hole}, {shot.name} {shotLineFor(shot)}</div>
+          </div>
+          <span className="mvpCard__pts">{shot.points} pts</span>
         </div>
       )}
 
@@ -1336,6 +1376,12 @@ function GlobalStyle() {
         50% { opacity: 1; transform: scale(1.1) rotate(15deg); }
       }
       .mvpCard--struggling { opacity: 0.92; animation: struggleShake 0.55s ease-in-out; }
+      .mvpCard--shot { background: linear-gradient(135deg, #FFFFFF 0%, #EFF7F1 100%); animation: mvpPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+      .mvpCard__shotIcon { font-size: 18px; line-height: 1; margin-top: 1px; animation: shotBounce 1s ease-in-out infinite; }
+      @keyframes shotBounce {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        50% { transform: translateY(-3px) rotate(-8deg); }
+      }
       .mvpCard__jab { font-size: 12px; font-style: italic; color: #8A6B6B; margin-top: 3px; }
       .mvpCard__skull { font-size: 18px; line-height: 1; margin-top: 1px; animation: struggleSkullPulse 1.6s ease-in-out infinite; }
       @keyframes struggleShake {
