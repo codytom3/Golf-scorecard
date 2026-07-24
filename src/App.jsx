@@ -585,8 +585,10 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
       </div>
 
       {mvp && (
-        <div className="mvpCard" style={{ borderColor: mvp.team.color }}>
-          <Award size={16} strokeWidth={2.25} color={mvp.team.color} />
+        <div key={`${mvp.id}-${mvp.total}`} className="mvpCard mvpCard--gold" style={{ borderColor: mvp.team.color }}>
+          <span className="mvpCard__sparkle mvpCard__sparkle--1">{"\u2728"}</span>
+          <span className="mvpCard__sparkle mvpCard__sparkle--2">{"\u2728"}</span>
+          <span className="mvpCard__trophy"><Award size={18} strokeWidth={2.25} color="var(--sand)" /></span>
           <div>
             <div className="mvpCard__label">MVP so far</div>
             <div className="mvpCard__name">{mvp.name} <span style={{ color: mvp.team.color }}>&middot; {mvp.team.name}</span></div>
@@ -597,7 +599,7 @@ function LeaderboardTab({ teams, courseHoles, scoreHoles }) {
 
       {struggling && mvp && struggling.id !== mvp.id && (
         <div key={`${struggling.id}-${struggling.total}`} className="mvpCard mvpCard--struggling" style={{ borderColor: struggling.team.color, alignItems: "flex-start" }}>
-          <span className="mvpCard__skull">\u2620\ufe0f</span>
+          <span className="mvpCard__skull">{"\u2620\ufe0f"}</span>
           <div style={{ flex: 1 }}>
             <div className="mvpCard__label">Bringing up the rear</div>
             <div className="mvpCard__name">{struggling.name} <span style={{ color: struggling.team.color }}>&middot; {struggling.team.name}</span></div>
@@ -1232,6 +1234,30 @@ function GlobalStyle() {
       .boardRow__total { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
 
       .mvpCard { display: flex; align-items: center; gap: 10px; background: white; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 12px; margin-bottom: 14px; color: var(--ink); }
+      .mvpCard--gold {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #FFFDF6 0%, #FFF6DD 100%);
+        box-shadow: 0 0 0 1px rgba(255,199,44,0.4), 0 4px 16px rgba(255,199,44,0.25);
+        animation: mvpPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .mvpCard__trophy { display: flex; align-items: center; justify-content: center; animation: mvpTrophyGlow 1.8s ease-in-out infinite; filter: drop-shadow(0 0 4px rgba(255,199,44,0.7)); }
+      .mvpCard__sparkle { position: absolute; font-size: 12px; opacity: 0; animation: mvpSparkle 2.2s ease-in-out infinite; pointer-events: none; }
+      .mvpCard__sparkle--1 { top: 8px; right: 18px; animation-delay: 0.2s; }
+      .mvpCard__sparkle--2 { bottom: 10px; right: 46px; font-size: 9px; animation-delay: 1.1s; }
+      @keyframes mvpPopIn {
+        0% { transform: scale(0.9); opacity: 0; }
+        60% { transform: scale(1.03); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes mvpTrophyGlow {
+        0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 3px rgba(255,199,44,0.6)); }
+        50% { transform: scale(1.12) rotate(-4deg); filter: drop-shadow(0 0 8px rgba(255,199,44,0.9)); }
+      }
+      @keyframes mvpSparkle {
+        0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+        50% { opacity: 1; transform: scale(1.1) rotate(15deg); }
+      }
       .mvpCard--struggling { opacity: 0.92; animation: struggleShake 0.55s ease-in-out; }
       .mvpCard__jab { font-size: 12px; font-style: italic; color: #8A6B6B; margin-top: 3px; }
       .mvpCard__skull { font-size: 18px; line-height: 1; margin-top: 1px; animation: struggleSkullPulse 1.6s ease-in-out infinite; }
